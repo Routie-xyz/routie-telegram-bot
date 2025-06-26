@@ -144,7 +144,7 @@ export const setAISybilHandlers = async (bot: Bot) => {
             );
         }
 
-        await bot.api.sendInvoice(
+        const invoice = await bot.api.sendInvoice(
             ctx.from.id,
             'Early Bird Access',
             'Buy Early Bird Access',
@@ -156,6 +156,14 @@ export const setAISybilHandlers = async (bot: Bot) => {
             [{ label: 'Early Bird Access', amount: +EARLY_BIRD_ACCESS_PRICE }]
         );
 
+        await redis.set(
+            userKey,
+            JSON.stringify({
+                ...user,
+                invoiceMessageId: invoice.message_id,
+            })
+        );
+
         return ctx.answerCallbackQuery();
     });
 
@@ -164,36 +172,41 @@ export const setAISybilHandlers = async (bot: Bot) => {
             ctx.update.pre_checkout_query.invoice_payload
         );
 
+        const redis = await getRedis();
+
+        if (!redis) {
+            console.error('Redis is not connected');
+            await ctx.answerPreCheckoutQuery(false, 'Error :(');
+            return;
+        }
+
+        const userKey = `${IS_PROD_SERVER ? 'prod' : 'dev'}_user_${
+            invoicePayload.userId
+        }`;
+
+        const userData = await redis.get(userKey);
+
+        if (!userData) {
+            await ctx.answerPreCheckoutQuery(false, 'User not found');
+            return;
+        }
+
+        const user = JSON.parse(userData) as User;
+
+        await ctx.api.deleteMessage(user.id, user.invoiceMessageId);
+
         if (invoicePayload.action === 'buyEarlyBirdAccess') {
-            const userKey = `${IS_PROD_SERVER ? 'prod' : 'dev'}_user_${
-                invoicePayload.userId
-            }`;
-
-            const redis = await getRedis();
-
-            if (!redis) {
-                console.error('Redis is not connected');
-                return ctx.answerPreCheckoutQuery(false, 'Error :(');
-            }
-
-            const userData = await redis.get(userKey);
-
-            if (!userData) {
-                return ctx.answerPreCheckoutQuery(false, 'User not found');
-            }
-
-            const user = JSON.parse(userData) as User;
-
             if (user.isHaveAccess) {
-                return ctx.answerPreCheckoutQuery(
+                await ctx.answerPreCheckoutQuery(
                     false,
                     'You already paid for access'
                 );
+                return;
             }
 
-            return ctx.answerPreCheckoutQuery(true);
+            await ctx.answerPreCheckoutQuery(true);
         } else {
-            ctx.answerPreCheckoutQuery(false, 'Invalid invoice payload');
+            await ctx.answerPreCheckoutQuery(false, 'Invalid invoice payload');
         }
     });
 
