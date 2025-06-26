@@ -92,11 +92,26 @@ export const setAISybilHandlers = async (bot: Bot) => {
             'become_an_early_bird'
         );
 
-        return ctx.api.sendAnimation(ctx.from.id, TG_BOT_ANIMATION_URL, {
+        await ctx.api.sendAnimation(ctx.from.id, TG_BOT_ANIMATION_URL, {
             caption:
                 "Welcome to Routie — your Web3 growth assistant!\n\n1. How it works\nConnect wallet → Choose project → Enter deposit → Launch route → Track progress or relax — it's all automated.\n\n2. How your data is protected\nWe use Privy, trusted by OpenSea, Farcaster & more. Your data stays encrypted — we never see or store it.\n\n3. How to get a better price on Routie\nBecome an early bird — it's 70% off during development. Like buying an apartment at the foundation stage — smart.",
             reply_markup: keyboard,
         });
+
+        const supportKeyboard = new InlineKeyboard().url(
+            'Contact us',
+            'https://t.me/RoutieSupportBot'
+        );
+
+        const supportMessage = await ctx.api.sendMessage(
+            ctx.from.id,
+            'Contact us if you wanna talk!\n\n@RoutieSupportBot',
+            {
+                reply_markup: supportKeyboard,
+            }
+        );
+
+        await ctx.api.pinChatMessage(ctx.from.id, supportMessage.message_id);
     });
 
     bot.callbackQuery('become_an_early_bird', async (ctx) => {
@@ -355,7 +370,7 @@ export const setAISybilHandlers = async (bot: Bot) => {
     //     return ctx.answerCallbackQuery();
     // });
 
-    bot.on('message', async (ctx) => {
-        console.log(`message`, ctx.update.message);
-    });
+    // bot.on('message', async (ctx) => {
+    //     console.log(`message`, ctx.update.message);
+    // });
 };

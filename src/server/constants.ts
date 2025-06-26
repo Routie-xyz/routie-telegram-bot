@@ -36,4 +36,5 @@ export const EARLY_BIRD_ACCESS_PRICE = process.env.EARLY_BIRD_ACCESS_PRICE;
 
 export const ADMINS: Record<string, boolean> = {
     '1313487041': true,
+    '1036753723': true,
 };
