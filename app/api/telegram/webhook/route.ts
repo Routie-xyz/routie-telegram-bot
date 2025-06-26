@@ -39,7 +39,11 @@ export const POST = async (req: NextRequest) => {
 
     await setAISybilHandlers(bot);
 
-    await bot.handleUpdate(body);
+    try {
+        await bot.handleUpdate(body);
+    } catch (error) {
+        console.error('Error handling update', error);
+    }
 
     return NextResponse.json({
         data: {
