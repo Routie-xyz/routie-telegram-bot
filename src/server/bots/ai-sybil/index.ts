@@ -48,9 +48,7 @@ export const setAISybilHandlers = async (bot: Bot) => {
             .map((data) => JSON.parse(data)) as User[];
 
         return ctx.reply(
-            `Total users: ${users.length}\nUsers with access: ${
-                users.filter((user) => user.isHaveAccess).length
-            }\nUsers with early bird access: ${
+            `Total users: ${users.length}\nUsers with early bird access: ${
                 users.filter((user) => user.isEarlyBird).length
             }`
         );
