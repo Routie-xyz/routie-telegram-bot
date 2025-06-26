@@ -168,45 +168,52 @@ export const setAISybilHandlers = async (bot: Bot) => {
     });
 
     bot.on('pre_checkout_query', async (ctx) => {
-        const invoicePayload = JSON.parse(
-            ctx.update.pre_checkout_query.invoice_payload
-        );
+        try {
+            const invoicePayload = JSON.parse(
+                ctx.update.pre_checkout_query.invoice_payload
+            );
 
-        const redis = await getRedis();
+            const redis = await getRedis();
 
-        if (!redis) {
-            console.error('Redis is not connected');
-            await ctx.answerPreCheckoutQuery(false, 'Error :(');
-            return;
-        }
-
-        const userKey = `${IS_PROD_SERVER ? 'prod' : 'dev'}_user_${
-            invoicePayload.userId
-        }`;
-
-        const userData = await redis.get(userKey);
-
-        if (!userData) {
-            await ctx.answerPreCheckoutQuery(false, 'User not found');
-            return;
-        }
-
-        const user = JSON.parse(userData) as User;
-
-        await ctx.api.deleteMessage(user.id, user.invoiceMessageId);
-
-        if (invoicePayload.action === 'buyEarlyBirdAccess') {
-            if (user.isHaveAccess) {
-                await ctx.answerPreCheckoutQuery(
-                    false,
-                    'You already paid for access'
-                );
+            if (!redis) {
+                console.error('Redis is not connected');
+                await ctx.answerPreCheckoutQuery(false, 'Error :(');
                 return;
             }
 
-            await ctx.answerPreCheckoutQuery(true);
-        } else {
-            await ctx.answerPreCheckoutQuery(false, 'Invalid invoice payload');
+            const userKey = `${IS_PROD_SERVER ? 'prod' : 'dev'}_user_${
+                invoicePayload.userId
+            }`;
+
+            const userData = await redis.get(userKey);
+
+            if (!userData) {
+                await ctx.answerPreCheckoutQuery(false, 'User not found');
+                return;
+            }
+
+            const user = JSON.parse(userData) as User;
+
+            await ctx.api.deleteMessage(user.id, user.invoiceMessageId);
+
+            if (invoicePayload.action === 'buyEarlyBirdAccess') {
+                if (user.isHaveAccess) {
+                    await ctx.answerPreCheckoutQuery(
+                        false,
+                        'You already paid for access'
+                    );
+                    return;
+                }
+
+                await ctx.answerPreCheckoutQuery(true);
+            } else {
+                await ctx.answerPreCheckoutQuery(
+                    false,
+                    'Invalid invoice payload'
+                );
+            }
+        } catch (error) {
+            await ctx.answerPreCheckoutQuery(false, (error as Error).message);
         }
     });
 
@@ -244,7 +251,7 @@ export const setAISybilHandlers = async (bot: Bot) => {
                 })
             );
 
-            bot.api.sendMessage(
+            await bot.api.sendMessage(
                 ctx.from.id,
                 `Early bird access purchased! You'll be one of the first to try true farming automation in action.\n\nWe'll ping you when it's live 🌀`
             );
