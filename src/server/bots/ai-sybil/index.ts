@@ -302,6 +302,7 @@ export const setAISybilHandlers = async (bot: Bot) => {
                 START_MESSAGE,
                 {
                     reply_markup: startMessageKeyboard,
+                    parse_mode: 'HTML',
                 }
             );
 
