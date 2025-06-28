@@ -280,7 +280,6 @@ export const setAISybilHandlers = async (bot: Bot) => {
                 JSON.stringify({
                     ...user,
                     isHaveAccess: true,
-                    isEarlyBird: true,
                 })
             );
 
