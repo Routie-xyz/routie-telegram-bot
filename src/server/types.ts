@@ -5,6 +5,6 @@ export type User = {
     lastName: string;
     languageCode: string;
     isHaveAccess: boolean;
-    isEarlyBird: boolean;
     invoiceMessageId: number;
+    startMessageId?: number;
 };

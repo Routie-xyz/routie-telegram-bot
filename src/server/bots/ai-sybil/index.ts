@@ -1,10 +1,14 @@
 import { Bot, InlineKeyboard } from 'grammy';
 
 import {
-    TG_BOT_ANIMATION_URL,
     IS_PROD_SERVER,
     ADMINS,
     EARLY_BIRD_ACCESS_PRICE,
+    POLL_QUESTIONS,
+    POLL_REDIS_KEY,
+    START_MESSAGE,
+    EARLY_ACCESS_MAX_COUNT,
+    EARLY_ACCESS_COUNT_KEY,
 } from '@/src/server/constants';
 import { getRedis } from '@/src/server/db';
 import { User } from '@/src/server/types';
@@ -20,6 +24,24 @@ const optionsToKeyboard = (options: string[], dataPrefix: string) => {
 };
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const getOrdinalSuffix = (n: number): string => {
+    const j = n % 10,
+        k = n % 100;
+    if (k >= 11 && k <= 13) {
+        return 'th';
+    }
+    if (j === 1) {
+        return 'st';
+    }
+    if (j === 2) {
+        return 'nd';
+    }
+    if (j === 3) {
+        return 'rd';
+    }
+    return 'th';
+};
 
 export const setAISybilHandlers = async (bot: Bot) => {
     bot.command('getStats', async (ctx) => {
@@ -49,7 +71,7 @@ export const setAISybilHandlers = async (bot: Bot) => {
 
         return ctx.reply(
             `Total users: ${users.length}\nUsers with early bird access: ${
-                users.filter((user) => user.isEarlyBird).length
+                users.filter((user) => user.isHaveAccess).length
             }`
         );
     });
@@ -70,7 +92,10 @@ export const setAISybilHandlers = async (bot: Bot) => {
             ctx.from.id
         }`;
 
-        const userData = await redis.get(userKey);
+        const [userData, earlyAccessCount] = await Promise.all([
+            redis.get(userKey),
+            redis.get(EARLY_ACCESS_COUNT_KEY),
+        ]);
 
         if (!userData) {
             await redis.set(
@@ -86,33 +111,20 @@ export const setAISybilHandlers = async (bot: Bot) => {
         }
 
         const keyboard = new InlineKeyboard().text(
-            'Become an early bird',
-            'become_an_early_bird'
+            'Get Early Access',
+            'get_early_access'
         );
 
-        await ctx.api.sendAnimation(ctx.from.id, TG_BOT_ANIMATION_URL, {
-            caption:
-                "Welcome to Routie — your Web3 growth assistant!\n\n1. How it works\nConnect wallet → Choose project → Enter deposit → Launch route → Track progress or relax — it's all automated.\n\n2. How your data is protected\nWe use Privy, trusted by OpenSea, Farcaster & more. Your data stays encrypted — we never see or store it.\n\n3. How to get a better price on Routie\nBecome an early bird — it's 70% off during development. Like buying an apartment at the foundation stage — smart.",
-            reply_markup: keyboard,
+        await ctx.api.sendMessage(ctx.from.id, START_MESSAGE, {
+            parse_mode: 'HTML',
+            reply_markup:
+                +(earlyAccessCount || 0) >= EARLY_ACCESS_MAX_COUNT
+                    ? undefined
+                    : keyboard,
         });
-
-        const supportKeyboard = new InlineKeyboard().url(
-            'Contact us',
-            'https://t.me/RoutieSupportBot'
-        );
-
-        const supportMessage = await ctx.api.sendMessage(
-            ctx.from.id,
-            'Contact us if you wanna talk!\n\n@RoutieSupportBot',
-            {
-                reply_markup: supportKeyboard,
-            }
-        );
-
-        await ctx.api.pinChatMessage(ctx.from.id, supportMessage.message_id);
     });
 
-    bot.callbackQuery('become_an_early_bird', async (ctx) => {
+    bot.callbackQuery('get_early_access', async (ctx) => {
         const redis = await getRedis();
 
         if (!redis) {
@@ -120,14 +132,27 @@ export const setAISybilHandlers = async (bot: Bot) => {
             return ctx.answerCallbackQuery('Error :(');
         }
 
+        const startMessageId = ctx.update.callback_query.message?.message_id;
+
         const userKey = `${IS_PROD_SERVER ? 'prod' : 'dev'}_user_${
             ctx.from.id
         }`;
 
-        const userData = await redis.get(userKey);
+        const earlyAccessCountKey = `${
+            IS_PROD_SERVER ? 'prod' : 'dev'
+        }_early_access_count`;
+
+        const [userData, earlyAccessCount] = await Promise.all([
+            redis.get(userKey),
+            redis.get(earlyAccessCountKey),
+        ]);
 
         if (!userData) {
             return ctx.answerCallbackQuery('User not found');
+        }
+
+        if (earlyAccessCount && +earlyAccessCount >= EARLY_ACCESS_MAX_COUNT) {
+            return ctx.answerCallbackQuery('Early access is over');
         }
 
         const user = JSON.parse(userData) as User;
@@ -158,6 +183,7 @@ export const setAISybilHandlers = async (bot: Bot) => {
             userKey,
             JSON.stringify({
                 ...user,
+                startMessageId,
                 invoiceMessageId: invoice.message_id,
             })
         );
@@ -215,6 +241,10 @@ export const setAISybilHandlers = async (bot: Bot) => {
         }
     });
 
+    bot.callbackQuery('early_bird_access_done', async (ctx) => {
+        await ctx.answerCallbackQuery('You are early bird!');
+    });
+
     bot.on('message:successful_payment', async (ctx) => {
         const successfullPayment = ctx.update.message.successful_payment;
 
@@ -232,7 +262,12 @@ export const setAISybilHandlers = async (bot: Bot) => {
                 return ctx.answerCallbackQuery('Error :(');
             }
 
-            const userData = await redis.get(userKey);
+            const [userData, earlyAccessCount] = await Promise.all([
+                redis.get(userKey),
+                redis.incr(
+                    `${IS_PROD_SERVER ? 'prod' : 'dev'}_early_access_count`
+                ),
+            ]);
 
             if (!userData) {
                 return ctx.answerCallbackQuery('User not found');
@@ -249,9 +284,36 @@ export const setAISybilHandlers = async (bot: Bot) => {
                 })
             );
 
+            const keyboard = new InlineKeyboard().url(
+                'DM',
+                'https://t.me/heavensaddress'
+            );
+
+            const startMessageKeyboard = new InlineKeyboard().text(
+                `You are ${earlyAccessCount}${getOrdinalSuffix(
+                    Number(earlyAccessCount)
+                )} early bird!`,
+                'early_bird_access_done'
+            );
+
+            await ctx.api.editMessageText(
+                ctx.from.id,
+                user.startMessageId as number,
+                START_MESSAGE,
+                {
+                    reply_markup: startMessageKeyboard,
+                }
+            );
+
             await bot.api.sendMessage(
                 ctx.from.id,
-                `Early bird access purchased! You'll be one of the first to try true farming automation in action.\n\nWe'll ping you when it's live 🌀`
+                `Wohoo! You're officially part of Routie's closed circle — we'll ping you once Routie beta is live!
+
+Got questions or just feeling lonely and want to swap memes?
+Talk to our owner Sonya — she is always around 🌀`,
+                {
+                    reply_markup: keyboard,
+                }
             );
         }
     });
@@ -279,9 +341,10 @@ export const setAISybilHandlers = async (bot: Bot) => {
     //     } = ctx.update;
 
     //     const messageId = message?.message_id;
+
     //     if (messageId) {
-    //         await ctx.api.editMessageCaption(from.id, messageId, {
-    //             caption: message?.caption || '',
+    //         await ctx.api.editMessageText(from.id, messageId, START_MESSAGE, {
+    //             parse_mode: 'HTML',
     //             reply_markup: undefined,
     //         });
     //     }
